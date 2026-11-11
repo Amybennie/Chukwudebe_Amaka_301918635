@@ -1,0 +1,290 @@
+
+============================================================
+ STEP 1 - Verify mongod is running (db.runCommand({ping:1}))
+============================================================
+[OK] mongod is responding.
+{ ok: 1 }
+
+============================================================
+ STEP 2 - Drop campusnest_nosql (fresh start)
+============================================================
+Dropped campusnest_nosql. Databases now:
+[
+  'admin',
+  'config',
+  'local'
+]
+
+============================================================
+ STEP 3 - schema_validation.js (create collection with $jsonSchema validator)
+============================================================
+
+============================================================
+ schema_validation.js - create maintenance_tickets with
+ a $jsonSchema validator (polymorphic per-category fields)
+============================================================
+
+[1] maintenance_tickets does not exist yet - nothing to drop.
+[2] Creating maintenance_tickets with $jsonSchema validator ...
+
+[3] Validator now on the collection (from db.getCollectionInfos):
+    validationLevel  = strict, validationAction = error
+    required fields  = ["ticket_id","lodge_id","lodge_name","room_code","category","reported_at","status","summary","status_history","photos","technician_visits"]
+    category enum    = ["plumbing","electrical","furniture","pest_control"]
+    status enum      = ["open","in_progress","resolved","closed"]
+
+[4] Inserting four VALID example documents (one per category) ...
+   Inserted 4 valid example documents:
+   - plumbing (ticket_id=1, Akoka Heights Lodge)
+   - electrical (ticket_id=2, Yaba Tech Suites)
+   - furniture (ticket_id=3, Ojo Gardens Residence)
+   - pest_control (ticket_id=4, Nsukka Scholars Lodge)
+
+[5] Attempting to insert an INVALID document (missing required `category`) ...
+   *** EXPECTED REJECTION ***
+   Error name    : MongoServerError
+   Error code    : 121
+   Error message : Document failed validation
+
+[6] Final state of maintenance_tickets:
+   estimatedDocumentCount = 4
+
+   One example document per category (category, status, the category-specific fields):
+
+   --- category: plumbing ---
+   {"ticket_id":1,"lodge_id":1,"lodge_name":"Akoka Heights Lodge","room_code":"AH-S-101","tenant_id":1001,"category":"plumbing","reported_at":"2026-11-08T12:37:16.554Z","status":"in_progress","summary":"Leaking tap in shared bathroom","affected_fixture":"tap","leak_present":true,"water_shut_off_needed":false}
+
+   --- category: electrical ---
+   {"ticket_id":2,"lodge_id":2,"lodge_name":"Yaba Tech Suites","room_code":"YT-S2-201","tenant_id":1002,"category":"electrical","reported_at":"2026-11-06T12:37:16.554Z","status":"resolved","resolved_at":"2026-11-10T12:37:16.554Z","summary":"Wall socket sparking when laptop charger plugged in","affected_appliance":"socket","voltage_issue":true,"spark_or_smoke":true,"safety_hazard":"high"}
+
+   --- category: furniture ---
+   {"ticket_id":3,"lodge_id":3,"lodge_name":"Ojo Gardens Residence","room_code":"OG-S4-301","tenant_id":1003,"category":"furniture","reported_at":"2026-11-01T12:37:16.554Z","status":"open","summary":"Broken study desk leg in shared 4-person room","item_type":"desk","damage_type":"broken","requires_replacement":true}
+
+   --- category: pest_control ---
+   {"ticket_id":4,"lodge_id":4,"lodge_name":"Nsukka Scholars Lodge","room_code":"NS-S-101","tenant_id":1004,"category":"pest_control","reported_at":"2026-11-04T12:37:16.554Z","status":"closed","resolved_at":"2026-11-09T12:37:16.554Z","summary":"Cockroach infestation in kitchenette","pest_type":"cockroach","infestation_level":"moderate","treatment_method":"spray"}
+
+============================================================
+ schema_validation.js DONE.
+============================================================
+
+
+============================================================
+ STEP 4 - seed.js (42,000 tickets raised by REAL tenants from PostgreSQL)
+============================================================
+Exporting real tenancies (tenant, lodge, bed-space, dates) from PostgreSQL to pg_refs.json ...
+pg_refs.json: 11M
+
+============================================================
+ seed.js - generate 42,000+ maintenance ticket documents
+============================================================
+
+[0] Deleting existing documents from maintenance_tickets ...
+    deletedCount = 4
+    loaded 51493 real tenancies from /tmp/pg_refs.json (100 lodges)
+
+[5] Generating 42000 maintenance ticket documents in batches of 1000 ...
+   progress: generated=5000 insertedTotal=5000
+   progress: generated=10000 insertedTotal=10000
+   progress: generated=15000 insertedTotal=15000
+   progress: generated=20000 insertedTotal=20000
+   progress: generated=25000 insertedTotal=25000
+   progress: generated=30000 insertedTotal=30000
+   progress: generated=35000 insertedTotal=35000
+   progress: generated=40000 insertedTotal=40000
+
+[6] Generation complete.
+    Target           = 42000
+    Generated        = 42000
+    Inserted (ack)   = 42000
+
+[7] db.maintenance_tickets.estimatedDocumentCount() = 42000
+    OK - final count meets the 40,000+ target.
+
+[8] Per-category counts (sanity check):
+  {"_id":"plumbing","count":13522}
+  {"_id":"electrical","count":11754}
+  {"_id":"furniture","count":8439}
+  {"_id":"pest_control","count":8285}
+
+============================================================
+ seed.js DONE.
+============================================================
+
+
+============================================================
+ STEP 5 - db.maintenance_tickets.estimatedDocumentCount()
+============================================================
+estimatedDocumentCount = 42000
+The portfolio requires 40,000+ documents.
+
+============================================================
+ STEP 6 - aggregations.js (AGG-1 lodge x category, AGG-2 avg resolution days, AGG-3 repeat problems)
+============================================================
+
+============================================================
+ aggregations.js - three business-question aggregations
+============================================================
+
+
+===== AGG-1: Tickets per lodge per category =====
+Variant (a): flat matrix {lodge_name, category, count}
+Result (variant a, 12 biggest lodge/category cells):
+  {"count":192,"lodge_name":"Bethel Lodge","category":"plumbing"}
+  {"count":186,"lodge_name":"Peace Suites","category":"plumbing"}
+  {"count":175,"lodge_name":"Crystal Haven","category":"plumbing"}
+  {"count":169,"lodge_name":"Glory Haven","category":"plumbing"}
+  {"count":167,"lodge_name":"Golden Residence","category":"plumbing"}
+  {"count":167,"lodge_name":"Golden Villa","category":"electrical"}
+  {"count":167,"lodge_name":"Kings Haven","category":"plumbing"}
+  {"count":167,"lodge_name":"Olive Annex","category":"plumbing"}
+  {"count":164,"lodge_name":"Glory Court","category":"plumbing"}
+  {"count":163,"lodge_name":"Golden Villa","category":"plumbing"}
+  {"count":161,"lodge_name":"Zion Court","category":"plumbing"}
+  {"count":159,"lodge_name":"Divine Suites","category":"plumbing"}
+
+Variant (b): nested {lodge_name, categories:[{category,count}]}
+Result (variant b, 5 busiest lodges):
+  {"categories":[{"category":"pest_control","count":87},{"category":"furniture","count":122},{"category":"plumbing","count":163},{"category":"electrical","count":167}],"total":539,"lodge_name":"Golden Villa"}
+  {"categories":[{"category":"furniture","count":122},{"category":"plumbing","count":157},{"category":"electrical","count":145},{"category":"pest_control","count":111}],"total":535,"lodge_name":"Kings Villa"}
+  {"categories":[{"category":"electrical","count":143},{"category":"pest_control","count":105},{"category":"furniture","count":108},{"category":"plumbing","count":169}],"total":525,"lodge_name":"Glory Haven"}
+  {"categories":[{"category":"furniture","count":86},{"category":"pest_control","count":93},{"category":"plumbing","count":192},{"category":"electrical","count":152}],"total":523,"lodge_name":"Bethel Lodge"}
+  {"categories":[{"category":"plumbing","count":167},{"category":"pest_control","count":108},{"category":"furniture","count":110},{"category":"electrical","count":135}],"total":520,"lodge_name":"Golden Residence"}
+
+===== AGG-2: Average resolution time per category (days) =====
+Result:
+  {"count":7991,"category":"pest_control","avg_days":9.47}
+  {"count":8213,"category":"furniture","avg_days":8.07}
+  {"count":13348,"category":"plumbing","avg_days":3.78}
+  {"count":11596,"category":"electrical","avg_days":3.29}
+
+===== AGG-3: Repeat problems per bed-space (2+ same-category in 12 months) =====
+Result (top 20):
+  {"count":5,"lodge_name":"Glory Villa","last_reported_at":"2026-09-29T13:53:01.480Z","room_code":"GV54-105S4-B4","category":"plumbing"}
+  {"count":5,"lodge_name":"Ojo Gardens Residence","last_reported_at":"2026-11-04T12:16:18.820Z","room_code":"OG3-225S1","category":"plumbing"}
+  {"count":5,"lodge_name":"Silver Gardens","last_reported_at":"2026-10-27T02:45:41.898Z","room_code":"SG98-411S4-B1","category":"plumbing"}
+  {"count":4,"lodge_name":"Akoka Heights Lodge","last_reported_at":"2026-11-01T10:39:18.423Z","room_code":"AH1-221S2-B2","category":"plumbing"}
+  {"count":4,"lodge_name":"Bethel Apartments","last_reported_at":"2026-09-19T04:39:12.859Z","room_code":"BA61-205S4-B1","category":"furniture"}
+  {"count":4,"lodge_name":"Bethel Lodge","last_reported_at":"2026-10-17T18:06:34.494Z","room_code":"BL87-325S1","category":"electrical"}
+  {"count":4,"lodge_name":"Cedar Apartments","last_reported_at":"2026-11-01T02:47:43.465Z","room_code":"CA6-106S2-B1","category":"plumbing"}
+  {"count":4,"lodge_name":"Crystal Court","last_reported_at":"2026-11-07T16:50:09.447Z","room_code":"CC55-115S4-B1","category":"plumbing"}
+  {"count":4,"lodge_name":"Covenant Lodge","last_reported_at":"2026-09-24T21:24:34.379Z","room_code":"CL28-210S4-B2","category":"electrical"}
+  {"count":4,"lodge_name":"Crystal Residence","last_reported_at":"2026-09-17T18:39:27.068Z","room_code":"CR57-119S2-B1","category":"plumbing"}
+  {"count":4,"lodge_name":"Crystal Residence","last_reported_at":"2026-09-14T13:27:09.648Z","room_code":"CR57-308S2-B2","category":"plumbing"}
+  {"count":4,"lodge_name":"Covenant Villa","last_reported_at":"2026-11-10T13:45:29.139Z","room_code":"CV88-208S4-B1","category":"pest_control"}
+  {"count":4,"lodge_name":"Diamond Gardens","last_reported_at":"2026-10-17T19:53:40.760Z","room_code":"DG49-120S2-B1","category":"furniture"}
+  {"count":4,"lodge_name":"Divine Villa","last_reported_at":"2026-11-10T12:09:31.861Z","room_code":"DV17-307S4-B4","category":"plumbing"}
+  {"count":4,"lodge_name":"Grace Court","last_reported_at":"2026-10-01T22:38:05.742Z","room_code":"GC37-102S4-B1","category":"electrical"}
+  {"count":4,"lodge_name":"Glory Court","last_reported_at":"2026-09-25T07:28:25.190Z","room_code":"GC45-208S4-B3","category":"plumbing"}
+  {"count":4,"lodge_name":"Glory Haven","last_reported_at":"2026-11-08T10:03:02.535Z","room_code":"GH14-101S2-B1","category":"plumbing"}
+  {"count":4,"lodge_name":"Glory Haven","last_reported_at":"2026-10-17T22:55:11.643Z","room_code":"GH14-317S4-B2","category":"plumbing"}
+  {"count":4,"lodge_name":"Golden Lodge","last_reported_at":"2026-10-24T20:24:55.105Z","room_code":"GL82-108S4-B4","category":"electrical"}
+  {"count":4,"lodge_name":"Heritage Court","last_reported_at":"2026-10-19T05:31:41.525Z","room_code":"HC86-341S1","category":"electrical"}
+
+============================================================
+ aggregations.js DONE.
+============================================================
+
+
+============================================================
+ STEP 7 - index_demo.js (BEFORE: COLLSCAN, AFTER: IXSCAN)
+============================================================
+The script drops indexes, runs explain() once (expect COLLSCAN),
+creates the compound index {lodge_id:1, status:1, category:1, reported_at:-1},
+then runs explain() again (expect IXSCAN).
+
+============================================================
+ index_demo.js - COLLSCAN before, IXSCAN after
+============================================================
+
+[0] Dropping all secondary indexes on maintenance_tickets ...
+    Current indexes (should be just _id_):
+    _id_
+
+Dashboard for: Glory Haven (lodge_id 14), category pest_control
+
+Query:
+{
+  lodge_id: 14,
+  status: {
+    '$in': [
+      'open',
+      'in_progress'
+    ]
+  },
+  category: 'pest_control',
+  reported_at: {
+    '$gte': ISODate('2026-10-12T12:37:22.830Z')
+  }
+}
+
+===== BEFORE INDEX - expect COLLSCAN =====
+
+-- Summarised executionStats (before) --
+{
+  winningPlan_stage: 'COLLSCAN',
+  totalDocsExamined: 42000,
+  totalKeysExamined: 0,
+  nReturned: 8,
+  executionTimeMillis: 17,
+  executionStages_stage: 'COLLSCAN',
+  executionStages_direction: 'forward',
+  executionStages_nReturned: 8,
+  executionStages_docsExamined: 42000
+}
+
+[3] Creating compound index:
+    { lodge_id:1, status:1, category:1, reported_at:-1 }
+    Indexes now:
+    _id_, idx_lodge_status_cat_reported
+
+===== AFTER INDEX - expect IXSCAN =====
+
+-- Summarised executionStats (after) --
+{
+  winningPlan_stage: 'FETCH',
+  totalDocsExamined: 8,
+  totalKeysExamined: 10,
+  nReturned: 8,
+  executionTimeMillis: 1,
+  executionStages_stage: 'FETCH',
+  executionStages_direction: undefined,
+  executionStages_nReturned: 8,
+  executionStages_docsExamined: 8
+}
+
+===== COMPARISON (real values from this run) =====
+  Metric                   | BEFORE            | AFTER
+  -------------------------|-------------------|-------------------
+  executionStages.stage    | COLLSCAN | FETCH
+  stage under FETCH        | -        | IXSCAN on idx_lodge_status_cat_reported
+  totalDocsExamined        | 42000 | 8
+  totalKeysExamined        | 0 | 10
+  nReturned                | 8 | 8
+  executionTimeMillis      | 17 | 1
+
+============================================================
+ index_demo.js DONE.
+============================================================
+
+
+============================================================
+ PORTFOLIO 4 RUN COMPLETE
+============================================================
+
+What to screenshot for the LMS submission
+-----------------------------------------
+  1. STEP 3 output - the listCollections info showing the $jsonSchema
+     validator on maintenance_tickets, plus the 4 valid example docs and
+     the rejected invalid doc.
+  2. STEP 5 output - estimatedDocumentCount() >= 40,000.
+  3. STEP 6 output - the three aggregations (AGG-1, AGG-2, AGG-3).
+  4. STEP 7 output - the BEFORE (COLLSCAN) and AFTER (IXSCAN) explain()
+     summaries plus the side-by-side comparison.
+
+Then paste the real outputs into README.md at each [paste real output here]
+placeholder and commit to GitHub:
+
+  git add portfolio-4-nosql/
+  git commit -m "Portfolio 4: NoSQL MongoDB maintenance tickets (schema validator, 42k docs, aggregations, COLLSCAN->IXSCAN)"
+  git push
+

@@ -1,0 +1,75 @@
+
+============================================================
+ index_demo.js - COLLSCAN before, IXSCAN after
+============================================================
+
+[0] Dropping all secondary indexes on maintenance_tickets ...
+    Current indexes (should be just _id_):
+    _id_
+
+Dashboard for: Glory Haven (lodge_id 14), category pest_control
+
+Query:
+{
+  lodge_id: 14,
+  status: {
+    '$in': [
+      'open',
+      'in_progress'
+    ]
+  },
+  category: 'pest_control',
+  reported_at: {
+    '$gte': ISODate('2026-10-12T12:37:22.830Z')
+  }
+}
+
+===== BEFORE INDEX - expect COLLSCAN =====
+
+-- Summarised executionStats (before) --
+{
+  winningPlan_stage: 'COLLSCAN',
+  totalDocsExamined: 42000,
+  totalKeysExamined: 0,
+  nReturned: 8,
+  executionTimeMillis: 17,
+  executionStages_stage: 'COLLSCAN',
+  executionStages_direction: 'forward',
+  executionStages_nReturned: 8,
+  executionStages_docsExamined: 42000
+}
+
+[3] Creating compound index:
+    { lodge_id:1, status:1, category:1, reported_at:-1 }
+    Indexes now:
+    _id_, idx_lodge_status_cat_reported
+
+===== AFTER INDEX - expect IXSCAN =====
+
+-- Summarised executionStats (after) --
+{
+  winningPlan_stage: 'FETCH',
+  totalDocsExamined: 8,
+  totalKeysExamined: 10,
+  nReturned: 8,
+  executionTimeMillis: 1,
+  executionStages_stage: 'FETCH',
+  executionStages_direction: undefined,
+  executionStages_nReturned: 8,
+  executionStages_docsExamined: 8
+}
+
+===== COMPARISON (real values from this run) =====
+  Metric                   | BEFORE            | AFTER
+  -------------------------|-------------------|-------------------
+  executionStages.stage    | COLLSCAN | FETCH
+  stage under FETCH        | -        | IXSCAN on idx_lodge_status_cat_reported
+  totalDocsExamined        | 42000 | 8
+  totalKeysExamined        | 0 | 10
+  nReturned                | 8 | 8
+  executionTimeMillis      | 17 | 1
+
+============================================================
+ index_demo.js DONE.
+============================================================
+
