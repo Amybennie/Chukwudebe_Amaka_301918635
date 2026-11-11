@@ -1,0 +1,221 @@
+===================================================================
+MIT 8103 Advanced Database Systems - Portfolio 2
+EXPLAIN ANALYZE - AFTER INDEXES
+Student: Amaka Benedicta Chukwudebe (2026/A/MIT/0517)
+===================================================================
+
+Each block below runs EXPLAIN ANALYZE on one of the seven queries,
+AFTER the indexes in indexes.sql were created.
+Look for: Index Scan and Bitmap Index Scan nodes replacing the
+Seq Scan nodes you saw before, lower execution time in ms, and
+lower actual rows removed by filters.
+
+Paste each plan into before_after_table.md under the After
+columns, next to the matching BEFORE plan from explain_before.sql.
+
+===== Q1: free rooms - AFTER INDEXES =====
+                                                                                                                                                 QUERY PLAN                                                                                                                                                 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=119.88..119.89 rows=4 width=30) (actual time=0.639..0.641 rows=16 loops=1)
+   Sort Key: r.room_code
+   Sort Method: quicksort  Memory: 25kB
+   ->  Nested Loop  (cost=0.72..119.84 rows=4 width=30) (actual time=0.041..0.605 rows=16 loops=1)
+         ->  Nested Loop Anti Join  (cost=0.57..119.17 rows=4 width=25) (actual time=0.036..0.589 rows=16 loops=1)
+               ->  Nested Loop  (cost=0.29..16.72 rows=152 width=33) (actual time=0.024..0.064 rows=141 loops=1)
+                     ->  Seq Scan on lodge l  (cost=0.00..3.25 rows=1 width=8) (actual time=0.006..0.012 rows=1 loops=1)
+                           Filter: (name = 'Akoka Heights Lodge'::text)
+                           Rows Removed by Filter: 99
+                     ->  Index Scan using idx_room_lodge_id on room r  (cost=0.29..11.95 rows=152 width=41) (actual time=0.016..0.036 rows=141 loops=1)
+                           Index Cond: (lodge_id = l.lodge_id)
+               ->  Index Scan using idx_tenancy_room_id on tenancy t  (cost=0.29..0.66 rows=1 width=8) (actual time=0.004..0.004 rows=1 loops=141)
+                     Index Cond: (room_id = r.room_id)
+                     Filter: ((status <> 'cancelled'::text) AND (start_date < ((date_trunc('month'::text, (CURRENT_DATE)::timestamp with time zone) + '1 year 1 mon'::interval))::date) AND (end_date > ((date_trunc('month'::text, (CURRENT_DATE)::timestamp with time zone) + '1 mon'::interval))::date))
+                     Rows Removed by Filter: 3
+         ->  Index Scan using room_type_pkey on room_type rt  (cost=0.15..0.17 rows=1 width=21) (actual time=0.001..0.001 rows=1 loops=16)
+               Index Cond: (room_type_id = r.room_type_id)
+ Planning Time: 1.410 ms
+ Execution Time: 0.718 ms
+(19 rows)
+
+
+===== Q2: occupancy pct - AFTER INDEXES =====
+                                                                           QUERY PLAN                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=2292.61..2292.86 rows=100 width=76) (actual time=12.701..12.708 rows=100 loops=1)
+   Sort Key: l.name
+   Sort Method: quicksort  Memory: 32kB
+   ->  HashAggregate  (cost=2286.78..2289.28 rows=100 width=76) (actual time=12.605..12.648 rows=100 loops=1)
+         Group Key: l.lodge_id
+         Batches: 1  Memory Usage: 32kB
+         ->  Hash Right Join  (cost=1223.62..2173.01 rows=15170 width=44) (actual time=4.680..10.951 rows=15170 loops=1)
+               Hash Cond: (r.lodge_id = l.lodge_id)
+               ->  Hash Right Join  (cost=1219.37..2127.25 rows=15170 width=24) (actual time=4.645..9.034 rows=15170 loops=1)
+                     Hash Cond: (t.room_id = r.room_id)
+                     ->  Bitmap Heap Scan on tenancy t  (cost=724.05..1621.48 rows=3976 width=8) (actual time=0.426..2.263 rows=12922 loops=1)
+                           Recheck Cond: ((start_date <= CURRENT_DATE) AND (end_date > CURRENT_DATE))
+                           Filter: (status = 'active'::text)
+                           Rows Removed by Filter: 364
+                           Heap Blocks: exact=139
+                           ->  Bitmap Index Scan on idx_tenancy_start_end  (cost=0.00..723.05 rows=14686 width=0) (actual time=0.407..0.408 rows=13286 loops=1)
+                                 Index Cond: ((start_date <= CURRENT_DATE) AND (end_date > CURRENT_DATE))
+                     ->  Hash  (cost=305.70..305.70 rows=15170 width=16) (actual time=4.147..4.148 rows=15170 loops=1)
+                           Buckets: 16384  Batches: 1  Memory Usage: 840kB
+                           ->  Seq Scan on room r  (cost=0.00..305.70 rows=15170 width=16) (actual time=0.002..1.885 rows=15170 loops=1)
+               ->  Hash  (cost=3.00..3.00 rows=100 width=28) (actual time=0.025..0.026 rows=100 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 15kB
+                     ->  Seq Scan on lodge l  (cost=0.00..3.00 rows=100 width=28) (actual time=0.003..0.011 rows=100 loops=1)
+ Planning Time: 0.349 ms
+ Execution Time: 12.792 ms
+(25 rows)
+
+
+===== Q3: rent collected vs outstanding - AFTER INDEXES =====
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=7062.07..7062.32 rows=100 width=76) (actual time=111.784..111.795 rows=100 loops=1)
+   Sort Key: l.name
+   Sort Method: quicksort  Memory: 32kB
+   ->  HashAggregate  (cost=7056.24..7058.74 rows=100 width=76) (actual time=111.611..111.727 rows=100 loops=1)
+         Group Key: l.lodge_id
+         Batches: 1  Memory Usage: 144kB
+         ->  Hash Right Join  (cost=2302.86..5809.46 rows=124678 width=37) (actual time=15.596..84.455 rows=126273 loops=1)
+               Hash Cond: (r.lodge_id = l.lodge_id)
+               ->  Hash Right Join  (cost=2298.61..5464.06 rows=124678 width=23) (actual time=15.567..69.294 rows=126273 loops=1)
+                     Hash Cond: (t.room_id = r.room_id)
+                     ->  Hash Right Join  (cost=1803.29..4641.37 rows=124678 width=23) (actual time=12.997..48.348 rows=126248 loops=1)
+                           Hash Cond: (ri.tenancy_id = t.tenancy_id)
+                           ->  Seq Scan on rent_instalment ri  (cost=0.00..2510.78 rows=124678 width=23) (actual time=0.006..9.755 rows=124678 loops=1)
+                           ->  Hash  (cost=1116.46..1116.46 rows=54946 width=16) (actual time=12.737..12.739 rows=54946 loops=1)
+                                 Buckets: 65536  Batches: 1  Memory Usage: 3088kB
+                                 ->  Seq Scan on tenancy t  (cost=0.00..1116.46 rows=54946 width=16) (actual time=0.004..5.457 rows=54946 loops=1)
+                     ->  Hash  (cost=305.70..305.70 rows=15170 width=16) (actual time=2.562..2.563 rows=15170 loops=1)
+                           Buckets: 16384  Batches: 1  Memory Usage: 840kB
+                           ->  Seq Scan on room r  (cost=0.00..305.70 rows=15170 width=16) (actual time=0.004..1.163 rows=15170 loops=1)
+               ->  Hash  (cost=3.00..3.00 rows=100 width=22) (actual time=0.026..0.027 rows=100 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 14kB
+                     ->  Seq Scan on lodge l  (cost=0.00..3.00 rows=100 width=22) (actual time=0.006..0.014 rows=100 loops=1)
+ Planning Time: 0.730 ms
+ Execution Time: 111.931 ms
+(24 rows)
+
+
+===== Q4: tenants with overdue instalments - AFTER INDEXES =====
+                                                                                            QUERY PLAN                                                                                             
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=6719.77..6766.18 rows=18565 width=68) (actual time=25.694..25.726 rows=757 loops=1)
+   Sort Key: ((sum(ri.amount_ngn))::numeric(14,2)) DESC
+   Sort Method: quicksort  Memory: 88kB
+   ->  HashAggregate  (cost=5125.01..5403.49 rows=18565 width=68) (actual time=25.068..25.357 rows=757 loops=1)
+         Group Key: t.tenant_id, l.name
+         Batches: 1  Memory Usage: 1297kB
+         ->  Hash Join  (cost=3145.55..4939.36 rows=18565 width=49) (actual time=21.938..24.531 rows=757 loops=1)
+               Hash Cond: (tn.tenant_id = t.tenant_id)
+               ->  Hash Join  (cost=1706.72..3451.79 rows=18565 width=29) (actual time=9.686..12.078 rows=757 loops=1)
+                     Hash Cond: (r.lodge_id = l.lodge_id)
+                     ->  Hash Join  (cost=1702.47..3396.74 rows=18565 width=23) (actual time=9.611..11.906 rows=757 loops=1)
+                           Hash Cond: (tn.room_id = r.room_id)
+                           ->  Hash Join  (cost=1207.15..2852.67 rows=18565 width=23) (actual time=5.443..7.514 rows=757 loops=1)
+                                 Hash Cond: (tn.tenancy_id = ri.tenancy_id)
+                                 ->  Seq Scan on tenancy tn  (cost=0.00..1116.46 rows=54946 width=24) (actual time=0.007..3.521 rows=54946 loops=1)
+                                 ->  Hash  (cost=975.09..975.09 rows=18565 width=15) (actual time=0.461..0.462 rows=757 loops=1)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 294kB
+                                       ->  Index Scan using idx_rent_instalment_overdue on rent_instalment ri  (cost=0.29..975.09 rows=18565 width=15) (actual time=0.032..0.357 rows=757 loops=1)
+                                             Index Cond: (due_date < CURRENT_DATE)
+                           ->  Hash  (cost=305.70..305.70 rows=15170 width=16) (actual time=4.110..4.110 rows=15170 loops=1)
+                                 Buckets: 16384  Batches: 1  Memory Usage: 840kB
+                                 ->  Seq Scan on room r  (cost=0.00..305.70 rows=15170 width=16) (actual time=0.004..1.744 rows=15170 loops=1)
+                     ->  Hash  (cost=3.00..3.00 rows=100 width=22) (actual time=0.067..0.067 rows=100 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 14kB
+                           ->  Seq Scan on lodge l  (cost=0.00..3.00 rows=100 width=22) (actual time=0.029..0.037 rows=100 loops=1)
+               ->  Hash  (cost=982.81..982.81 rows=36481 width=28) (actual time=12.227..12.227 rows=36481 loops=1)
+                     Buckets: 65536  Batches: 1  Memory Usage: 2815kB
+                     ->  Seq Scan on tenant t  (cost=0.00..982.81 rows=36481 width=28) (actual time=0.007..5.322 rows=36481 loops=1)
+ Planning Time: 1.053 ms
+ Execution Time: 26.235 ms
+(30 rows)
+
+
+===== Q5: waitlist length per room type - AFTER INDEXES =====
+                                                               QUERY PLAN                                                                
+-----------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=61.07..62.27 rows=481 width=47) (actual time=0.730..0.743 rows=300 loops=1)
+   Sort Key: (count(w.waitlist_id)) DESC, l.name, rt.name
+   Sort Method: quicksort  Memory: 48kB
+   ->  HashAggregate  (cost=34.83..39.64 rows=481 width=47) (actual time=0.515..0.556 rows=300 loops=1)
+         Group Key: rt.room_type_id, l.name
+         Batches: 1  Memory Usage: 105kB
+         ->  Hash Join  (cost=14.00..26.41 rows=481 width=51) (actual time=0.099..0.317 rows=720 loops=1)
+               Hash Cond: (rt.lodge_id = l.lodge_id)
+               ->  Hash Right Join  (cost=9.75..20.84 rows=481 width=45) (actual time=0.070..0.201 rows=720 loops=1)
+                     Hash Cond: (w.room_type_id = rt.room_type_id)
+                     ->  Seq Scan on waitlist_entry w  (cost=0.00..9.81 rows=481 width=24) (actual time=0.004..0.034 rows=481 loops=1)
+                     ->  Hash  (cost=6.00..6.00 rows=300 width=29) (actual time=0.063..0.064 rows=300 loops=1)
+                           Buckets: 1024  Batches: 1  Memory Usage: 27kB
+                           ->  Seq Scan on room_type rt  (cost=0.00..6.00 rows=300 width=29) (actual time=0.004..0.028 rows=300 loops=1)
+               ->  Hash  (cost=3.00..3.00 rows=100 width=22) (actual time=0.026..0.026 rows=100 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 14kB
+                     ->  Seq Scan on lodge l  (cost=0.00..3.00 rows=100 width=22) (actual time=0.005..0.013 rows=100 loops=1)
+ Planning Time: 0.471 ms
+ Execution Time: 0.793 ms
+(19 rows)
+
+
+===== Q6: avg days to fix maintenance ticket - AFTER INDEXES =====
+                                                               QUERY PLAN                                                               
+----------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=122.78..123.03 rows=100 width=70) (actual time=1.708..1.713 rows=100 loops=1)
+   Sort Key: l.name
+   Sort Method: quicksort  Memory: 32kB
+   ->  HashAggregate  (cost=117.96..119.46 rows=100 width=70) (actual time=1.625..1.664 rows=100 loops=1)
+         Group Key: l.lodge_id
+         Batches: 1  Memory Usage: 80kB
+         ->  Hash Right Join  (cost=4.25..74.14 rows=2504 width=46) (actual time=0.032..0.692 rows=2504 loops=1)
+               Hash Cond: (m.lodge_id = l.lodge_id)
+               ->  Seq Scan on maintenance_ticket m  (cost=0.00..63.04 rows=2504 width=32) (actual time=0.003..0.244 rows=2504 loops=1)
+               ->  Hash  (cost=3.00..3.00 rows=100 width=22) (actual time=0.025..0.025 rows=100 loops=1)
+                     Buckets: 1024  Batches: 1  Memory Usage: 14kB
+                     ->  Seq Scan on lodge l  (cost=0.00..3.00 rows=100 width=22) (actual time=0.005..0.012 rows=100 loops=1)
+ Planning Time: 0.250 ms
+ Execution Time: 1.745 ms
+(14 rows)
+
+
+===== Q7: student history by matric - AFTER INDEXES =====
+                                                                                 QUERY PLAN                                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=37.01..37.03 rows=5 width=112) (actual time=0.115..0.116 rows=3 loops=1)
+   Sort Key: tn.start_date
+   Sort Method: quicksort  Memory: 25kB
+   InitPlan 2 (returns $1)
+     ->  Index Scan using tenant_pkey on tenant  (cost=8.60..16.61 rows=1 width=15) (actual time=0.015..0.015 rows=1 loops=1)
+           Index Cond: (tenant_id = $0)
+           InitPlan 1 (returns $0)
+             ->  Index Scan using tenancy_pkey on tenancy  (cost=0.29..8.31 rows=1 width=8) (actual time=0.008..0.009 rows=1 loops=1)
+                   Index Cond: (tenancy_id = 20002)
+   ->  GroupAggregate  (cost=20.17..20.34 rows=5 width=112) (actual time=0.099..0.104 rows=3 loops=1)
+         Group Key: t.tenant_id, l.name, r.room_code, tn.tenancy_id
+         ->  Sort  (cost=20.17..20.18 rows=5 width=106) (actual time=0.091..0.092 rows=6 loops=1)
+               Sort Key: t.tenant_id, l.name, r.room_code, tn.tenancy_id
+               Sort Method: quicksort  Memory: 25kB
+               ->  Nested Loop Left Join  (cost=1.30..20.11 rows=5 width=106) (actual time=0.058..0.081 rows=6 loops=1)
+                     ->  Nested Loop  (cost=1.01..19.13 rows=2 width=86) (actual time=0.050..0.057 rows=3 loops=1)
+                           ->  Nested Loop  (cost=0.86..18.81 rows=2 width=80) (actual time=0.048..0.053 rows=3 loops=1)
+                                 ->  Nested Loop  (cost=0.58..18.18 rows=2 width=67) (actual time=0.043..0.046 rows=3 loops=1)
+                                       ->  Index Scan using idx_tenant_matric on tenant t  (cost=0.29..8.31 rows=1 width=37) (actual time=0.034..0.034 rows=1 loops=1)
+                                             Index Cond: (student_matric = $1)
+                                       ->  Index Scan using idx_tenancy_tenant_id on tenancy tn  (cost=0.29..9.85 rows=2 width=38) (actual time=0.008..0.010 rows=3 loops=1)
+                                             Index Cond: (tenant_id = t.tenant_id)
+                                 ->  Index Scan using room_pkey on room r  (cost=0.29..0.32 rows=1 width=29) (actual time=0.002..0.002 rows=1 loops=3)
+                                       Index Cond: (room_id = tn.room_id)
+                           ->  Index Scan using lodge_pkey on lodge l  (cost=0.14..0.16 rows=1 width=22) (actual time=0.001..0.001 rows=1 loops=3)
+                                 Index Cond: (lodge_id = r.lodge_id)
+                     ->  Index Scan using idx_rent_instalment_tenancy_id on rent_instalment ri  (cost=0.29..0.46 rows=3 width=28) (actual time=0.007..0.007 rows=2 loops=3)
+                           Index Cond: (tenancy_id = tn.tenancy_id)
+ Planning Time: 0.597 ms
+ Execution Time: 0.166 ms
+(30 rows)
+
+
+===== End of EXPLAIN ANALYZE AFTER INDEXES =====
+Compare each plan with the matching BEFORE plan from
+explain_before.sql and paste both into before_after_table.md.
