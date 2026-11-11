@@ -1,0 +1,202 @@
+
+============================================================
+ Portfolio 3 - Transactions and Concurrency
+============================================================
+ Student : Amaka Benedicta Chukwudebe (2026/A/MIT/0517)
+ Started : 2026-11-11 12:37:09
+
+============================================================
+ [1/5] Checking Portfolio 1 data
+============================================================
+ 54946 tenancies present. OK.
+
+============================================================
+ [2/5] Loading reserve_room.sql
+============================================================
+CREATE FUNCTION
+psql:reserve_room.sql:43: NOTICE:  function reserve_room(pg_catalog.int8,pg_catalog.int8,date,pg_catalog.numeric) does not exist, skipping
+DROP FUNCTION
+CREATE FUNCTION
+COMMENT
+reserve_room() and next_session_start() loaded.
+ next_session_starts 
+---------------------
+ 2027-09-01
+(1 row)
+
+
+============================================================
+ [3/5] COMMIT demo - payment succeeds
+============================================================
+ Student   : 11 'Fatima Abdullahi'
+ Room type : 36 'Grace Apartments - shared_4' - free beds next session: 72 - rent NGN 410000.00
+ tenancies_before 
+------------------
+                0
+(1 row)
+
+BEGIN
+ reserve_room -> reserved 'Bed GA12-200S4-B1 reserved for tenant 11 for 2027-09-01 to 2028-09-01'
+ Payment gateway says: SUCCESS  -> COMMIT
+COMMIT
+ tenancies_after 
+-----------------
+               1
+(1 row)
+
+ tenancy_id |   room_code   | start_date |  end_date  | status | first_instalment_ngn | instalment_status 
+------------+---------------+------------+------------+--------+----------------------+-------------------
+      54956 | GA12-200S4-B1 | 2027-09-01 | 2028-09-01 | active |            410000.00 | paid
+(1 row)
+
+ The tenancy AND its first instalment were saved together (atomic + durable).
+
+============================================================
+ [4/5] ROLLBACK demo - payment fails
+============================================================
+ Student   : 13 'Tobiloba Bakare'
+ Room type : 36 'Grace Apartments - shared_4' - free beds next session: 71 - rent NGN 410000.00
+ tenancies_before 
+------------------
+                4
+(1 row)
+
+BEGIN
+ reserve_room -> reserved 'Bed GA12-200S4-B2 reserved for tenant 13 for 2027-09-01 to 2028-09-01'
+ visible_inside_transaction 
+----------------------------
+                          1
+(1 row)
+
+ Payment gateway says: DECLINED -> ROLLBACK
+ROLLBACK
+ tenancies_after 
+-----------------
+               4
+(1 row)
+
+ rows_left_for_that_tenancy_id 
+-------------------------------
+                             0
+(1 row)
+
+ instalments_left 
+------------------
+                0
+(1 row)
+
+ Tenancy and instalment were both undone - all or nothing (atomicity).
+
+============================================================
+ [5/5] Six concurrency scenarios with two real sessions
+============================================================
+Run at 2026-11-11 12:37:09
+Next session      : 2027-09-01 to 2028-09-01
+Room type         : 1 = Akoka Heights Lodge (single), 35 free beds next session
+Contested bed     : AH-S-102 (room_id 2)
+Student in A      : Musa Danjuma (tenant 12)
+Student in B      : Tobiloba Bakare (tenant 13)
+
+========================================================================
+ PART 1 - THE BUG: check-then-insert with no protection
+========================================================================
+A copy of the booking table WITHOUT the exclusion constraint shows what
+happens if the application only checks 'is the bed free?' and then inserts.
+[  0.02s] Session A BEGIN; is AH-S-102 free?  bookings found = 0
+[  0.02s] Session B BEGIN; is AH-S-102 free?  bookings found = 0
+[  0.02s] Session A INSERT booking for Musa Danjuma
+[  0.02s] Session B INSERT booking for Tobiloba Bakare
+[  0.02s] Session A COMMIT
+[  0.02s] Session B COMMIT
+
+Result: 2 bookings for ONE bed in the same session -> DOUBLE BOOKING
+   room_id 2  Musa Danjuma              2027-09-01 -> 2028-09-01
+   room_id 2  Tobiloba Bakare           2027-09-01 -> 2028-09-01
+
+========================================================================
+ PART 2 - FIX 1 (main fix): the exclusion constraint tenancy_no_room_overlap
+========================================================================
+Same race on the real tenancy table. The constraint makes B wait for A,
+then refuses B's overlapping tenancy.
+[  0.04s] Session A BEGIN; is AH-S-102 free?  found = 0
+[  0.04s] Session B BEGIN; is AH-S-102 free?  found = 0
+[  0.04s] Session A INSERT tenancy 54958 for Musa Danjuma (not committed yet)
+[  1.55s] Session B INSERT for Tobiloba Bakare ... still waiting after 1.5 s (blocked by A)
+[  1.55s] Session A COMMIT
+[  1.55s] Session B ERROR 23P01: ERROR:  conflicting key value violates exclusion constraint "tenancy_no_room_overlap"
+[  1.55s] Session B ROLLBACK - the bed stays with Musa Danjuma
+
+Result: 1 tenancy on AH-S-102 for the session -> no double booking
+
+========================================================================
+ PART 3 - FIX 2: reserve_room() picks beds with FOR UPDATE SKIP LOCKED
+========================================================================
+Two students ask for the same room type at the same moment.
+B skips the bed A has locked and gets the next free bed, without waiting.
+[  1.56s] Session A BEGIN; reserve_room(Kunle Odukoya) -> reserved, bed AH1-400S1 (locked, not committed)
+[  1.56s] Session B BEGIN; reserve_room(Onyekachi Nwosu) -> reserved, bed AH1-401S1 after 5 ms (no wait)
+[  1.57s] Session A COMMIT
+[  1.57s] Session B COMMIT
+
+Result: both students booked, different beds (AH1-400S1 and AH1-401S1)
+
+========================================================================
+ PART 4 - SERIALIZABLE isolation catches the race (no constraint needed)
+========================================================================
+Part 1 again on the unprotected table, but both sessions use SERIALIZABLE.
+[  1.58s] Session A BEGIN ISOLATION LEVEL SERIALIZABLE; free? found = 0
+[  1.58s] Session B BEGIN ISOLATION LEVEL SERIALIZABLE; free? found = 0
+[  1.58s] Session A INSERT booking for Musa Danjuma
+[  1.58s] Session B INSERT booking for Tobiloba Bakare
+[  1.58s] Session A COMMIT ok
+[  1.58s] Session B COMMIT -> ERROR 40001: ERROR:  could not serialize access due to read/write dependencies among transactions
+[  1.58s] Session B retry: free? found = 1 -> bed taken, show B another bed
+
+Result: 1 booking kept; the second one was refused with 40001
+
+========================================================================
+ PART 5 - READ COMMITTED vs REPEATABLE READ
+========================================================================
+
+--- Session A at READ COMMITTED ---
+[  1.59s] Session A BEGIN; next-session bookings in this lodge = 19
+[  1.60s] Session B INSERT tenancy 54962 in the same lodge; COMMIT
+[  1.60s] Session A same query again, same transaction  = 20
+
+--- Session A at REPEATABLE READ ---
+[  1.61s] Session A BEGIN; next-session bookings in this lodge = 19
+[  1.61s] Session B INSERT tenancy 54963 in the same lodge; COMMIT
+[  1.61s] Session A same query again, same transaction  = 19
+
+Result: READ COMMITTED saw B's new row mid-transaction (non-repeatable read);
+REPEATABLE READ kept the snapshot from its first query.
+
+========================================================================
+ PART 6 - DEADLOCK, and the fix (lock rows in one fixed order)
+========================================================================
+Two pending instalments: 2 and 4. A finance clerk (A) and the payment
+webhook (B) each update both, in OPPOSITE order. Everything is rolled back.
+[  1.62s] Session A BEGIN; UPDATE instalment 2  (A locks 2)
+[  1.63s] Session B BEGIN; UPDATE instalment 4  (B locks 4)
+[  2.13s] Session A UPDATE instalment 4 ... waiting for B
+[  2.13s] Session B UPDATE instalment 2 ... waiting for A  -> each waits for the other
+[  2.63s] Session A ERROR 40P01: ERROR:  deadlock detected
+[  2.63s] Session B UPDATE finished (the other session was chosen as the deadlock victim)
+[  2.63s] both      ROLLBACK
+
+--- Fix: both sessions lock the two rows in ascending id order first ---
+[  2.64s] Session A BEGIN; lock 2,4 in id order -> got both
+[  3.14s] Session B lock in id order ... waits politely (no cycle possible)
+[  3.14s] Session A UPDATE 4 and 2; ROLLBACK (demo only, releases the locks)
+[  3.15s] Session B got the locks, UPDATE both -> done, no deadlock
+
+========================================================================
+ CLEAN-UP
+========================================================================
+Removed 3 demo tenancies (and their instalments) and the naive table.
+All six parts finished.
+
+============================================================
+ Portfolio 3 complete
+============================================================
+ Evidence: this output (p3_output.log) and race_demos_output.log
