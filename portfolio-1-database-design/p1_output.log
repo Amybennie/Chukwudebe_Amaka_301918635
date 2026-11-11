@@ -1,0 +1,166 @@
+============================================================
+ Portfolio 1 - Database Design and Modelling
+ Student: Amaka Benedicta Chukwudebe (2026/A/MIT/0517)
+ Study session 1: normalisation, design, advanced constraints
+============================================================
+
+============================================================
+ STEP 1/5: schema.sql - drop + recreate schema, 9 tables, constraints
+============================================================
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-1-database-design/schema.sql:28: NOTICE:  drop cascades to 2 other objects
+DETAIL:  drop cascades to extension btree_gist
+drop cascades to extension pgcrypto
+DROP SCHEMA
+CREATE SCHEMA
+CREATE EXTENSION
+CREATE EXTENSION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+ALTER TABLE
+ALTER TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE FUNCTION
+CREATE TRIGGER
+CREATE FUNCTION
+CREATE TRIGGER
+
+============================================================
+ STEP 2/5: seed.sql - lodges, room types, rooms, tenants, guarantors,
+           tenancies, instalments, waitlist, maintenance
+============================================================
+BEGIN
+INSERT 0 4
+INSERT 0 12
+INSERT 0 24
+INSERT 0 12
+INSERT 0 12
+SELECT 1
+INSERT 0 8
+INSERT 0 2
+INSERT 0 2
+INSERT 0 3
+INSERT 0 1
+INSERT 0 3
+INSERT 0 3
+INSERT 0 2
+INSERT 0 2
+INSERT 0 2
+INSERT 0 4
+COMMIT
+
+============================================================
+ STEP 3/5: bulk_generator.py - 60,000+ tenants and tenancies
+============================================================
+[1/7] Lodges and room types ...
+[2/7] Bed-spaces (one room row per lettable bed) ...
+      15,146 bed-spaces in 100 lodges
+[3/7] Tenants, guarantors and tenancies per session ...
+      session 2023/24: 12,804 beds let
+      session 2024/25: 12,853 beds let
+      session 2025/26: 12,914 beds let
+      session 2026/27: 12,914 beds let
+      session 2027/28: 1,883 beds let
+      36,469 tenants + 36,469 guarantors
+      54,938 tenancies (1,570 cancelled)
+[4/7] Rent instalments (sum exactly to annual rent) ...
+      124,660 instalments
+[5/7] Waitlist ...
+      479 waitlist entries on 60 popular room types
+[6/7] Maintenance tickets ...
+      2,500 tickets
+[7/7] COMMIT (the deferred guarantor trigger checks every new tenant now) ...
+      commit took 0.2s
+
+============================================================
+ BULK GENERATOR COMPLETE
+============================================================
+  lodge                 :        100
+  room_type             :        300
+  room                  :     15,170
+  tenant                :     36,481
+  guarantor             :     36,481
+  tenancy               :     54,946
+  rent_instalment       :    124,678
+  waitlist_entry        :        481
+  maintenance_ticket    :      2,504
+  tenancies whose instalments != rent : 0
+  elapsed                             : 11.2s
+============================================================
+Target met: 50,000+ tenancies; every tenancy's instalments add up to its rent.
+
+============================================================
+ STEP 4/5: constraint_tests.sql - 9 tests (8 must be blocked, 1 allowed)
+           Each line must say PASS (the rule stopped the bad data).
+============================================================
+============================================================
+ CampusNest Portfolio 1 - constraint tests (each one should PASS)
+============================================================
+CREATE TABLE
+SELECT 1
+CREATE FUNCTION
+
+--- Test 9: tenant with no guarantor (deferred trigger fires at COMMIT) ---
+BEGIN
+INSERT 0 1
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-1-database-design/constraint_tests.sql:122: ERROR:  Tenant 36482 has no guarantor
+CONTEXT:  PL/pgSQL function require_guarantor() line 4 at RAISE
+INSERT 0 1
+
+ # | result |                        test                        |                                                                     detail                                                                     
+---+--------+----------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------
+ 1 | PASS   | Two overlapping tenancies on one bed-space         | blocked by tenancy_no_room_overlap: conflicting key value violates exclusion constraint "tenancy_no_room_overlap"
+ 2 | PASS   | One tenant in two bed-spaces at the same time      | blocked by tenancy_no_tenant_overlap: conflicting key value violates exclusion constraint "tenancy_no_tenant_overlap"
+ 3 | PASS   | Instalments adding up to more than the annual rent | blocked by exceed annual rent: Instalments (400000.00) + new (200000.00) exceed annual rent (500000.00) for tenancy 54951
+ 4 | PASS   | Duplicate waitlist position for one room type      | blocked by waitlist_entry_room_type_id_position_key: duplicate key value violates unique constraint "waitlist_entry_room_type_id_position_key"
+ 5 | PASS   | Annual rent of zero                                | blocked by tenancy_annual_rent_ngn_check: new row for relation "tenancy" violates check constraint "tenancy_annual_rent_ngn_check"
+ 6 | PASS   | Tenancy ending on the day it starts                | blocked by tenancy_check: new row for relation "tenancy" violates check constraint "tenancy_check"
+ 7 | PASS   | Room type that is not single/shared_2/shared_4     | blocked by room_type_name_check: new row for relation "room_type" violates check constraint "room_type_name_check"
+ 8 | PASS   | Cancelled booking frees the bed-space (allowed)    | allowed: a cancelled and an active tenancy on the same bed and dates
+ 9 | PASS   | Tenant with no guarantor (checked at COMMIT)       | blocked by trg_require_guarantor: the COMMIT above failed, row not saved
+
+            summary             
+--------------------------------
+ 9 of 9 constraint tests passed
+
+
+============================================================
+ STEP 5/5: row-count summary
+============================================================
+     table_name     | count  
+--------------------+--------
+ guarantor          |  36481
+ lodge              |    100
+ maintenance_ticket |   2504
+ rent_instalment    | 124678
+ room               |  15170
+ room_type          |    300
+ tenancy            |  54946
+ tenant             |  36481
+ waitlist_entry     |    481
+(9 rows)
+
+
+============================================================
+ Portfolio 1 complete.
+ What to screenshot for the LMS submission:
+   1. The STEP 1 output (schema created, no errors).
+   2. The STEP 2 output (seed loaded, no errors).
+   3. The STEP 3 bulk_generator.py final summary block
+      (rows inserted per table, elapsed seconds).
+   4. The STEP 4 table showing 9 of 9 constraint tests PASS.
+   5. The STEP 5 row-count summary.
+============================================================

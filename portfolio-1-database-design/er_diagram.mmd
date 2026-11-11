@@ -1,0 +1,115 @@
+```mermaid
+erDiagram
+    %% =========================================================
+    %% CampusNest - ER diagram (Portfolio 1)
+    %% Student : Amaka Benedicta Chukwudebe (2026/A/MIT/0517)
+    %% Course  : MIT 8103 Advanced Database Systems
+    %% =========================================================
+    %% Relationship cardinality:
+    %%   ||--o{   one to many
+    %%   ||--o|   one to zero-or-one
+    %%   }o--o{   many to many (avoided here by junction tables)
+    %% =========================================================
+
+    LODGE          ||--o{ ROOM_TYPE          : offers
+    LODGE          ||--o{ ROOM               : contains
+    ROOM_TYPE      ||--o{ ROOM               : "categorised as"
+    TENANT         ||--o| GUARANTOR          : "has one"
+    TENANT         ||--o{ TENANCY            : holds
+    ROOM           ||--o{ TENANCY            : "is let under"
+    TENANCY        ||--o{ RENT_INSTALMENT    : "paid via"
+    ROOM_TYPE      ||--o{ WAITLIST_ENTRY     : "waitlisted for"
+    TENANT         ||--o{ WAITLIST_ENTRY     : joins
+    LODGE          ||--o{ MAINTENANCE_TICKET : "raised at"
+    ROOM           ||--o{ MAINTENANCE_TICKET : concerns
+    TENANT         ||--o{ MAINTENANCE_TICKET : reports
+
+    LODGE {
+        bigint   lodge_id       PK
+        text     name
+        text     nearest_school "CHECK in UNILAG/YABATECH/LASU/UNN"
+        text     address_line
+        text     city
+        text     state
+        timestamptz created_at
+    }
+
+    ROOM_TYPE {
+        bigint    room_type_id    PK
+        bigint    lodge_id        FK
+        text      name            "CHECK single/shared_2/shared_4"
+        numeric   annual_rent_ngn "CHECK > 0, Naira"
+        int       capacity        "CHECK 1-4"
+    }
+
+    ROOM {
+        bigint     room_id       PK
+        bigint     lodge_id      FK
+        bigint     room_type_id  FK
+        text       room_code     "UNIQUE(lodge_id, room_code)"
+        int        floor
+        timestamptz created_at
+    }
+
+    TENANT {
+        bigint     tenant_id      PK
+        text       full_name
+        text       email          "UNIQUE"
+        text       phone
+        text       student_matric
+        text       nearest_school "CHECK in 4 schools"
+        timestamptz created_at
+    }
+
+    GUARANTOR {
+        bigint     guarantor_id  PK
+        bigint     tenant_id     FK "UNIQUE (one per tenant)"
+        text       full_name
+        text       phone
+        text       email
+        text       relationship
+        text       home_address
+        timestamptz created_at
+    }
+
+    TENANCY {
+        bigint     tenancy_id      PK
+        bigint     room_id         FK
+        bigint     tenant_id       FK
+        date       start_date
+        date       end_date        "CHECK > start_date"
+        numeric    annual_rent_ngn "CHECK > 0, snapshot of room_type"
+        text       status          "CHECK active/ended/cancelled"
+        timestamptz created_at
+    }
+
+    RENT_INSTALMENT {
+        bigint     instalment_id PK
+        bigint     tenancy_id    FK
+        date       due_date
+        numeric    amount_ngn    "CHECK > 0, Naira"
+        timestamptz paid_at
+        text       status        "CHECK pending/paid/overdue"
+        timestamptz created_at
+    }
+
+    WAITLIST_ENTRY {
+        bigint     waitlist_id   PK
+        bigint     room_type_id  FK
+        bigint     tenant_id     FK
+        int        position      "CHECK > 0"
+        timestamptz joined_at
+    }
+
+    MAINTENANCE_TICKET {
+        bigint     ticket_id    PK
+        bigint     lodge_id     FK
+        bigint     room_id      FK "nullable"
+        bigint     tenant_id    FK "nullable"
+        text       category     "CHECK plumbing/electrical/furniture/pest_control/other"
+        timestamptz reported_at
+        timestamptz resolved_at
+        text       status       "CHECK open/in_progress/resolved/closed"
+        text       summary
+    }
+```
