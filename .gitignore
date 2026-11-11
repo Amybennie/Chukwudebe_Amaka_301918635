@@ -1,0 +1,10 @@
+# local scratch
+*.tmp
+/tmp/
+__pycache__/
+*.pyc
+.DS_Store
+# the exported tenancy file used by P4 is large and re-created on every run
+pg_refs.json
+# the kit zip dragged into the Codespace is not part of the repo
+*.zip
