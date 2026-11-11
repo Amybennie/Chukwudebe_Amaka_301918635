@@ -1,0 +1,296 @@
+
+============================================================
+ Portfolio 5 - Distributed and Cloud Database Exercise
+ Student: Amaka Benedicta Chukwudebe (2026/A/MIT/0517)
+ Case:    CampusNest - Private Student Accommodation Booking
+ Covers:  Study Session 2 (Distributed DB) + Session 3 (Cloud DB)
+          + Session 6 (Data Security and Privacy - NDPA 2023)
+============================================================
+
+--- Step 1: Verify Portfolio 1 schema (9 CampusNest tables) exists
+Found 9 of 9 expected CampusNest tables.
+Portfolio 1 schema is present.
+
+--- Step 2: Verify rent_instalment has data and check partition state
+rent_instalment currently has 124679 rows.
+rent_instalment is a flat heap - partition.sql will convert it.
+
+============================================================
+ Step 3: Run partition.sql - partition rent_instalment by academic session
+============================================================
+============================================================
+ Portfolio 5 - partition.sql
+ Convert rent_instalment to a table partitioned by academic session.
+ Student: Amaka Benedicta Chukwudebe (2026/A/MIT/0517)
+============================================================
+
+[Step 1] Rename the existing rent_instalment to rent_instalment_old
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:65: NOTICE:  index "rent_instalment_tenancy_id_idx" does not exist, skipping
+DROP INDEX
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:66: NOTICE:  index "rent_instalment_due_date_idx" does not exist, skipping
+DROP INDEX
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:67: NOTICE:  index "rent_instalment_paid_at_idx" does not exist, skipping
+DROP INDEX
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:68: NOTICE:  index "rent_instalment_status_idx" does not exist, skipping
+DROP INDEX
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:69: NOTICE:  index "rent_instalment_tenancy_due_idx" does not exist, skipping
+DROP INDEX
+  -> old table renamed; old constraint/index names cleared.
+
+[Step 2] Create the new partitioned parent (PARTITION BY RANGE on due_date)
+CREATE TABLE
+  -> partitioned parent created with PK (instalment_id, due_date).
+
+[Step 3] Create one partition per ACADEMIC SESSION (1 Sept -> 1 Sept),
+         covering every due_date in the data plus the next session
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:126: NOTICE:  partition for session 2023/2024 created
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:126: NOTICE:  partition for session 2024/2025 created
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:126: NOTICE:  partition for session 2025/2026 created
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:126: NOTICE:  partition for session 2026/2027 created
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:126: NOTICE:  partition for session 2027/2028 created
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:126: NOTICE:  partition for session 2028/2029 created
+DO
+[Step 4] Create the DEFAULT partition (safety net - should stay EMPTY)
+CREATE TABLE
+[Step 5] Copy old data into the new partitioned table (rows route automatically)
+INSERT 0 124679
+ setval 
+--------
+ 124681
+(1 row)
+
+  -> old rows copied into partitioned table; sequence advanced.
+
+[Step 6] Recreate the FK to tenancy + the instalment_sum trigger on the parent
+ALTER TABLE
+psql:/workspaces/Chukwudebe_Amaka_301918635/portfolio-5-distributed-cloud/partition.sql:171: NOTICE:  trigger "trg_instalment_sum" for relation "rent_instalment" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+  -> FK + instalment_sum trigger recreated on the partitioned parent.
+
+[Step 7] Recreate indexes on the partitioned parent (PG 16 propagates to partitions)
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+  -> indexes created on parent (propagated to every partition).
+
+[Step 8] Drop the old flat table rent_instalment_old
+DROP TABLE
+  -> old table dropped.
+
+[Step 9] Rows in each partition (the DEFAULT partition must show 0)
+        partition         |                      holds                       | instalments 
+--------------------------+--------------------------------------------------+-------------
+ rent_instalment_default  | DEFAULT                                          |           0
+ rent_instalment_s2023_24 | FOR VALUES FROM ('2023-09-01') TO ('2024-09-01') |       29967
+ rent_instalment_s2024_25 | FOR VALUES FROM ('2024-09-01') TO ('2025-09-01') |       29868
+ rent_instalment_s2025_26 | FOR VALUES FROM ('2025-09-01') TO ('2026-09-01') |       30202
+ rent_instalment_s2026_27 | FOR VALUES FROM ('2026-09-01') TO ('2027-09-01') |       30253
+ rent_instalment_s2027_28 | FOR VALUES FROM ('2027-09-01') TO ('2028-09-01') |        4389
+ rent_instalment_s2028_29 | FOR VALUES FROM ('2028-09-01') TO ('2029-09-01') |           0
+(7 rows)
+
+
+[Step 10] Partition pruning: a query for the current session reads ONE partition
+                                                                                                                  QUERY PLAN                                                                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ HashAggregate (actual rows=3 loops=1)
+   Group Key: rent_instalment.status
+   Batches: 1  Memory Usage: 40kB
+   ->  Append (actual rows=30253 loops=1)
+         Subplans Removed: 6
+         ->  Bitmap Heap Scan on rent_instalment_s2026_27 rent_instalment_1 (actual rows=30253 loops=1)
+               Recheck Cond: ((due_date >= make_date((EXTRACT(year FROM (CURRENT_DATE - '8 mons'::interval)))::integer, 9, 1)) AND (due_date < make_date(((EXTRACT(year FROM (CURRENT_DATE - '8 mons'::interval)))::integer + 1), 9, 1)))
+               Heap Blocks: exact=295
+               ->  Bitmap Index Scan on rent_instalment_s2026_27_due_date_idx (actual rows=30253 loops=1)
+                     Index Cond: ((due_date >= make_date((EXTRACT(year FROM (CURRENT_DATE - '8 mons'::interval)))::integer, 9, 1)) AND (due_date < make_date(((EXTRACT(year FROM (CURRENT_DATE - '8 mons'::interval)))::integer + 1), 9, 1)))
+(10 rows)
+
+  (Look for "Subplans Removed" / only one rent_instalment_s... partition scanned.)
+
+============================================================
+ partition.sql complete.
+ Next steps:
+   1. Follow replication_setup.md to build the streaming read replica.
+   2. Read cloud_architecture.md for the cloud + NDPA 2023 design.
+============================================================
+
+============================================================
+ Step 4: Partition list + per-month row distribution (capture for screenshot)
+============================================================
+
+-- List every rent_instalment partition (one per session + 1 default)
+        tablename         
+--------------------------
+ rent_instalment
+ rent_instalment_default
+ rent_instalment_s2023_24
+ rent_instalment_s2024_25
+ rent_instalment_s2025_26
+ rent_instalment_s2026_27
+ rent_instalment_s2027_28
+ rent_instalment_s2028_29
+(8 rows)
+
+
+-- ANALYZE the partitioned parent so pg_class.reltuples is accurate
+ANALYZE
+
+-- Estimated row count per partition (from planner stats after ANALYZE)
+        partition         | approx_rows 
+--------------------------+-------------
+ rent_instalment_default  |           0
+ rent_instalment_s2023_24 |       29967
+ rent_instalment_s2024_25 |       29868
+ rent_instalment_s2025_26 |       30202
+ rent_instalment_s2026_27 |       30253
+ rent_instalment_s2027_28 |        4389
+ rent_instalment_s2028_29 |           0
+(7 rows)
+
+
+-- Row distribution by month (proves rows routed to the right partition)
+   month    | instalments 
+------------+-------------
+ 2023-09-01 |       12804
+ 2024-01-01 |        6452
+ 2024-03-01 |        4259
+ 2024-05-01 |        6452
+ 2024-09-01 |       12853
+ 2025-01-01 |        6369
+ 2025-03-01 |        4277
+ 2025-05-01 |        6369
+ 2025-09-01 |       12914
+ 2026-01-01 |        6521
+ 2026-03-01 |        4246
+ 2026-05-01 |        6521
+ 2026-09-01 |       12914
+ 2026-11-01 |           8
+ 2027-01-01 |        6518
+ 2027-03-01 |        4288
+ 2027-05-01 |        6522
+ 2027-07-01 |           3
+ 2027-09-01 |        1884
+ 2028-01-01 |         931
+ 2028-03-01 |         643
+ 2028-05-01 |         931
+(22 rows)
+
+
+-- Total rows in the partitioned parent (should equal the pre-partition count)
+ total_rent_instalment_rows 
+----------------------------
+                     124679
+(1 row)
+
+
+============================================================
+ Step 5: Streaming read replica (replication_demo.sh)
+============================================================
+
+------------------------------------------------------------
+ 1. Primary settings needed for streaming replication
+------------------------------------------------------------
+      name       | setting 
+-----------------+---------
+ hot_standby     | on
+ max_wal_senders | 10
+ port            | 5432
+ wal_level       | replica
+(4 rows)
+
+
+------------------------------------------------------------
+ 2. Base backup of the primary -> /var/lib/postgresql/16/replica
+------------------------------------------------------------
+waiting for checkpoint
+   73/85625 kB (0%), 0/1 tablespace
+85636/85636 kB (100%), 0/1 tablespace
+85636/85636 kB (100%), 1/1 tablespace
+standby.signal present: yes
+primary_conninfo written by -R:
+primary_conninfo = 'user=postgres passfile=''/var/lib/postgresql/.pgpass'' channel_binding=prefer host=''/var/run/postgresql'' port=5432 sslmode=prefer sslcompression=0 sslcertmode=allow sslsni=1 ssl_min_protocol_version=TLSv1.2 gssencmode=prefer krbsrvname=postgres gssdelegation=0 target_session_attrs=any load_balance_hosts=disable'
+
+------------------------------------------------------------
+ 3. Replica config (Ubuntu keeps config in /etc, so the copy has none)
+------------------------------------------------------------
+waiting for server to start.... done
+server started
+
+------------------------------------------------------------
+ 4. Who is who
+------------------------------------------------------------
+port 5432 -> PRIMARY (read-write)
+port 5433 -> REPLICA (read-only, in recovery)
+
+------------------------------------------------------------
+ 5. A write on the REPLICA is rejected
+------------------------------------------------------------
+ERROR:  cannot execute INSERT in a read-only transaction
+
+------------------------------------------------------------
+ 6. Write on the PRIMARY, read it on the REPLICA
+------------------------------------------------------------
+PRIMARY: inserted ticket_id 2505 ('Replication check 12:37:33')
+REPLICA: rows with ticket_id 2505 = 1
+ ticket_id |          summary           |         reported_at          
+-----------+----------------------------+------------------------------
+      2505 | Replication check 12:37:33 | 2026-11-11 12:37:33.85154+00
+(1 row)
+
+Counts on both servers:
+  primary tenancy rows: 54947
+  replica tenancy rows: 54947
+
+------------------------------------------------------------
+ 7. Replication status and lag
+------------------------------------------------------------
+-[ RECORD 1 ]----+----------------
+application_name | walreceiver
+state            | streaming
+sync_state       | async
+sent_lsn         | 0/C00C000
+replay_lsn       | 0/C00B928
+bytes_behind     | 1752
+replay_lag       | 00:00:00.001826
+
+ replayed_up_to | time_since_last_replayed_change 
+----------------+---------------------------------
+ 0/C00B928      | 00:00:00.600272
+(1 row)
+
+(test ticket 2505 removed on the primary - the delete replicates too)
+
+------------------------------------------------------------
+ Done
+------------------------------------------------------------
+waiting for server to shut down.... done
+server stopped
+Replica stopped to save Codespace memory (re-run this script to rebuild it).
+
+============================================================
+ Step 6: Read the cloud architecture document
+============================================================
+
+ The THIRD centerpiece of Portfolio 5 is the CLOUD ARCHITECTURE
+ document that places the CampusNest database in a Nigerian region
+ and analyses NDPA 2023 compliance, the CAP theorem trade-offs,
+ sync vs async replication, and how the system survives the
+ start-of-session rent rush.
+
+ Read it here:
+
+   portfolio-5-distributed-cloud/cloud_architecture.md
+
+ It is grounded in Study Session 2 (distributed DB, CAP, consistency),
+ Study Session 3 (cloud database systems), and Study Session 6
+ (data security and privacy - NDPA 2023).
+
+============================================================
+ Portfolio 5 complete
+============================================================
+ Evidence: p5_output.log (this output) and replication_output.log
+ Design write-up: cloud_architecture.md

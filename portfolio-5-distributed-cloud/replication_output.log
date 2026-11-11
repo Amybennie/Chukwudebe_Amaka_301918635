@@ -1,0 +1,80 @@
+
+------------------------------------------------------------
+ 1. Primary settings needed for streaming replication
+------------------------------------------------------------
+      name       | setting 
+-----------------+---------
+ hot_standby     | on
+ max_wal_senders | 10
+ port            | 5432
+ wal_level       | replica
+(4 rows)
+
+
+------------------------------------------------------------
+ 2. Base backup of the primary -> /var/lib/postgresql/16/replica
+------------------------------------------------------------
+waiting for checkpoint
+   73/85625 kB (0%), 0/1 tablespace
+85636/85636 kB (100%), 0/1 tablespace
+85636/85636 kB (100%), 1/1 tablespace
+standby.signal present: yes
+primary_conninfo written by -R:
+primary_conninfo = 'user=postgres passfile=''/var/lib/postgresql/.pgpass'' channel_binding=prefer host=''/var/run/postgresql'' port=5432 sslmode=prefer sslcompression=0 sslcertmode=allow sslsni=1 ssl_min_protocol_version=TLSv1.2 gssencmode=prefer krbsrvname=postgres gssdelegation=0 target_session_attrs=any load_balance_hosts=disable'
+
+------------------------------------------------------------
+ 3. Replica config (Ubuntu keeps config in /etc, so the copy has none)
+------------------------------------------------------------
+waiting for server to start.... done
+server started
+
+------------------------------------------------------------
+ 4. Who is who
+------------------------------------------------------------
+port 5432 -> PRIMARY (read-write)
+port 5433 -> REPLICA (read-only, in recovery)
+
+------------------------------------------------------------
+ 5. A write on the REPLICA is rejected
+------------------------------------------------------------
+ERROR:  cannot execute INSERT in a read-only transaction
+
+------------------------------------------------------------
+ 6. Write on the PRIMARY, read it on the REPLICA
+------------------------------------------------------------
+PRIMARY: inserted ticket_id 2505 ('Replication check 12:37:33')
+REPLICA: rows with ticket_id 2505 = 1
+ ticket_id |          summary           |         reported_at          
+-----------+----------------------------+------------------------------
+      2505 | Replication check 12:37:33 | 2026-11-11 12:37:33.85154+00
+(1 row)
+
+Counts on both servers:
+  primary tenancy rows: 54947
+  replica tenancy rows: 54947
+
+------------------------------------------------------------
+ 7. Replication status and lag
+------------------------------------------------------------
+-[ RECORD 1 ]----+----------------
+application_name | walreceiver
+state            | streaming
+sync_state       | async
+sent_lsn         | 0/C00C000
+replay_lsn       | 0/C00B928
+bytes_behind     | 1752
+replay_lag       | 00:00:00.001826
+
+ replayed_up_to | time_since_last_replayed_change 
+----------------+---------------------------------
+ 0/C00B928      | 00:00:00.600272
+(1 row)
+
+(test ticket 2505 removed on the primary - the delete replicates too)
+
+------------------------------------------------------------
+ Done
+------------------------------------------------------------
+waiting for server to shut down.... done
+server stopped
+Replica stopped to save Codespace memory (re-run this script to rebuild it).
